@@ -63,6 +63,93 @@ app.get("/statistics", async (req, res) => {
   });
 });
 
+// Add Product API
+
+app.post("/products", async (req, res) => {
+  try {
+    const product = req.body;
+
+    const result = await productsCollection.insertOne(product);
+
+    res.send({
+      success: true,
+      insertedId: result.insertedId,
+      message: "Product added successfully",
+    });
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+//get products
+app.get("/products", async (req, res) => {
+  const result = await productsCollection.find().toArray();
+  res.send(result);
+});
+
+//Read products
+
+const { ObjectId } = require("mongodb");
+
+app.patch("/products/:id", async (req, res) => {
+  const id = req.params.id;
+  const updatedData = req.body;
+
+  const result = await productsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: updatedData,
+    }
+  );
+
+  res.send(result);
+});
+
+//delete products
+
+app.delete("/products/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await productsCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  res.send(result);
+});
+
+//search products
+
+app.get("/products", async (req, res) => {
+  const search = req.query.search || "";
+
+  const query = {
+    title: {
+      $regex: search,
+      $options: "i",
+    },
+  };
+
+  const result = await productsCollection
+    .find(query)
+    .toArray();
+
+  res.send(result);
+});
+
+const query = {};
+
+if (req.query.category) {
+  query.category = req.query.category;
+}
+
+if (req.query.condition) {
+  query.condition = req.query.condition;
+}
+
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
