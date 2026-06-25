@@ -120,13 +120,20 @@ app.get("/products", async (req, res) => {
 // single product
 
 app.get("/products/:id", async (req, res) => {
-  const id = req.params.id;
+  try {
+    const id = req.params.id;
 
-  const result = await productsCollection.findOne({
-    _id: new ObjectId(id),
-  });
+    const product =
+      await productsCollection.findOne({
+        _id: new ObjectId(id),
+      });
 
-  res.send(result);
+    res.send(product);
+  } catch (err) {
+    res.status(500).send({
+      message: err.message,
+    });
+  }
 });
 
 //delete products
@@ -156,49 +163,143 @@ app.patch("/products/:id", async (req, res) => {
 
 // GET: Buyer Orders
 app.get("/orders", async (req, res) => {
-  try {
-    const buyerId = req.decoded.userId;
+  // try {
+  //   const buyerId = req.query.userId;
 
-    const orders = await ordersCollection
-      .find({ "buyerInfo.userId": buyerId })
-      .sort({ _id: -1 })
-      .toArray();
+  //   const orders = await ordersCollection
+  //     .find({ "buyerInfo.userId": buyerId })
+  //     .sort({ _id: -1 })
+  //     .toArray();
+    const user = req.user;
+
+  if (!user) {
+    return res.send([]);
+  }
+
+  const orders = await ordersCollection
+    .find({
+      "buyerInfo.userId": user.id,
+    })
+    .toArray();
 
     res.send(orders);
+  // }catch (error) {
+  //   res.status(500).send({
+  //     message: "Failed to fetch orders",
+  //     error: error.message,
+  //   });
+  // }
+});
+
+// Single Order Details
+
+app.get("/orders/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const order = await ordersCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    res.send(order);
   } catch (error) {
     res.status(500).send({
-      message: "Failed to fetch orders",
-      error: error.message,
+      message: error.message,
     });
   }
 });
 
 //post orders
-// app.post("/orders", async (req, res) => {
-//   const order = req.body;
-
-//   order.buyerInfo.userId = req.decoded.userId; //  real user
-//   order.orderStatus = "pending";
-//   order.paymentStatus = "unpaid";
-//   order.createdAt = new Date();
-
-//   const result = await ordersCollection.insertOne(order);
-
-//   res.send(result);
-// });
 
 app.post("/orders", async (req, res) => {
+ const user = req.user;
+
+  if (!user) {
+    return res.status(401).send({
+      message: "Unauthorized",
+    });
+  }
+
+
   const order = req.body;
 
-  order.buyerInfo.userId = req.body.buyerId; // from frontend
-  order.orderStatus = "pending";
-  order.paymentStatus = "unpaid";
-  order.createdAt = new Date();
+  const newOrder = {
+    productId: order.productId,
+    productTitle: order.productTitle,
+    productImage: order.productImage,
 
-  const result = await ordersCollection.insertOne(order);
+    quantity: order.quantity,
+    totalAmount: order.totalAmount,
+
+     buyerInfo: {
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+    },
+    sellerInfo: order.sellerInfo,
+
+    shippingAddress: order.shippingAddress,
+
+    orderStatus: "pending",
+    paymentStatus: "pending",
+
+    createdAt: new Date(),
+  };
+
+  const result =
+    await ordersCollection.insertOne(newOrder);
 
   res.send(result);
 });
+
+//cancel an orders
+app.patch("/orders/:id/cancel", async (req, res) => {
+  const id = req.params.id;
+
+  const order =
+    await ordersCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+  if (
+    order.orderStatus === "shipped" ||
+    order.orderStatus === "delivered"
+  ) {
+    return res.status(400).send({
+      message:
+        "Order cannot be cancelled",
+    });
+  }
+
+  const result =
+    await ordersCollection.updateOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        $set: {
+          orderStatus: "cancelled",
+        },
+      }
+    );
+
+  res.send(result);
+});
+
+
+//update order status
+app.patch("/orders/:id/status", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body;
+
+  const result = await ordersCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { orderStatus: status } }
+  );
+
+  res.send(result);
+});
+
 
 //post wishlist
 
@@ -316,18 +417,6 @@ app.get("/seller/orders", async (req, res) => {
   res.send(orders);
 });
 
-//update order status
-app.patch("/orders/:id/status", async (req, res) => {
-  const id = req.params.id;
-  const { status } = req.body;
-
-  const result = await ordersCollection.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: { orderStatus: status } }
-  );
-
-  res.send(result);
-});
 
 //get all users
 
