@@ -10,7 +10,7 @@ require('dotenv').config()
 app.use(cors());
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
@@ -40,6 +40,57 @@ const productsCollection = database.collection("products");
 const ordersCollection = database.collection("orders");
 const reviewsCollection = database.collection("reviews");
 const paymentsCollection = database.collection("payments");
+
+const jwt = require("jsonwebtoken");
+
+app.post("/jwt", async (req, res) => {
+  const { email, role, _id } = req.body;
+
+  if (!email) {
+    return res.status(400).send({ message: "Email required" });
+  }
+
+  const token = jwt.sign(
+    {
+      email,
+      role,
+      userId: _id,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+
+  res.send({ token });
+});
+
+function verifyToken(req, res, next) {
+  const authorization = req.headers.authorization;
+
+  if (!authorization) {
+    return res.status(401).send({
+      message: "Unauthorized Access",
+    });
+  }
+
+  const token = authorization.split(" ")[1];
+
+  jwt.verify(
+    token,
+    process.env.JWT_SECRET,
+    (err, decoded) => {
+      if (err) {
+        return res.status(401).send({
+          message: "Invalid Token",
+        });
+      }
+
+      req.decoded = decoded;
+      next();
+    }
+  );
+}
+
+
 
 app.get("/statistics", async (req, res) => {
   const totalUsers = await usersCollection.countDocuments();
@@ -85,31 +136,41 @@ app.post("/products", async (req, res) => {
 });
 
 //get products
+
 app.get("/products", async (req, res) => {
-  const result = await productsCollection.find().toArray();
+  const search = req.query.search || "";
+  const category = req.query.category;
+  const condition = req.query.condition;
+
+  let query = {
+    title: { $regex: search, $options: "i" },
+  };
+
+  if (category) {
+    query.category = category;
+  }
+
+  if (condition) {
+    query.condition = condition;
+  }
+
+  const result = await productsCollection.find(query).toArray();
   res.send(result);
 });
 
-//Read products
+// single product
 
-const { ObjectId } = require("mongodb");
-
-app.patch("/products/:id", async (req, res) => {
+app.get("/products/:id", async (req, res) => {
   const id = req.params.id;
-  const updatedData = req.body;
 
-  const result = await productsCollection.updateOne(
-    { _id: new ObjectId(id) },
-    {
-      $set: updatedData,
-    }
-  );
+  const result = await productsCollection.findOne({
+    _id: new ObjectId(id),
+  });
 
   res.send(result);
 });
 
 //delete products
-
 app.delete("/products/:id", async (req, res) => {
   const id = req.params.id;
 
@@ -120,35 +181,52 @@ app.delete("/products/:id", async (req, res) => {
   res.send(result);
 });
 
-//search products
+//update products
+app.patch("/products/:id", async (req, res) => {
+  const id = req.params.id;
 
-app.get("/products", async (req, res) => {
-  const search = req.query.search || "";
+  const updateDoc = { $set: req.body };
 
-  const query = {
-    title: {
-      $regex: search,
-      $options: "i",
-    },
-  };
-
-  const result = await productsCollection
-    .find(query)
-    .toArray();
+  const result = await productsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    updateDoc
+  );
 
   res.send(result);
 });
 
-const query = {};
+// GET: Buyer Orders
+app.get("/orders", verifyToken, async (req, res) => {
+  try {
+    const buyerId = req.decoded.userId;
 
-if (req.query.category) {
-  query.category = req.query.category;
-}
+    const orders = await ordersCollection
+      .find({ "buyerInfo.userId": buyerId })
+      .sort({ _id: -1 })
+      .toArray();
 
-if (req.query.condition) {
-  query.condition = req.query.condition;
-}
+    res.send(orders);
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to fetch orders",
+      error: error.message,
+    });
+  }
+});
 
+//post orders
+app.post("/orders", verifyToken, async (req, res) => {
+  const order = req.body;
+
+  order.buyerInfo.userId = req.decoded.userId; //  real user
+  order.orderStatus = "pending";
+  order.paymentStatus = "unpaid";
+  order.createdAt = new Date();
+
+  const result = await ordersCollection.insertOne(order);
+
+  res.send(result);
+});
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
