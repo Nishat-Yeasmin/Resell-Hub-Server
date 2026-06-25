@@ -10,6 +10,13 @@ require('dotenv').config()
 app.use(cors());
 app.use(express.json());
 
+app.use((req, res, next) => {
+  req.decoded = {
+    userId: "demo-user-1",
+  };
+  next();
+});
+
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 app.get('/', (req, res) => {
@@ -40,55 +47,7 @@ const productsCollection = database.collection("products");
 const ordersCollection = database.collection("orders");
 const reviewsCollection = database.collection("reviews");
 const paymentsCollection = database.collection("payments");
-
-const jwt = require("jsonwebtoken");
-
-app.post("/jwt", async (req, res) => {
-  const { email, role, _id } = req.body;
-
-  if (!email) {
-    return res.status(400).send({ message: "Email required" });
-  }
-
-  const token = jwt.sign(
-    {
-      email,
-      role,
-      userId: _id,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
-
-  res.send({ token });
-});
-
-function verifyToken(req, res, next) {
-  const authorization = req.headers.authorization;
-
-  if (!authorization) {
-    return res.status(401).send({
-      message: "Unauthorized Access",
-    });
-  }
-
-  const token = authorization.split(" ")[1];
-
-  jwt.verify(
-    token,
-    process.env.JWT_SECRET,
-    (err, decoded) => {
-      if (err) {
-        return res.status(401).send({
-          message: "Invalid Token",
-        });
-      }
-
-      req.decoded = decoded;
-      next();
-    }
-  );
-}
+const wishlistCollection = database.collection("wishlist");
 
 
 
@@ -196,7 +155,7 @@ app.patch("/products/:id", async (req, res) => {
 });
 
 // GET: Buyer Orders
-app.get("/orders", verifyToken, async (req, res) => {
+app.get("/orders", async (req, res) => {
   try {
     const buyerId = req.decoded.userId;
 
@@ -215,10 +174,23 @@ app.get("/orders", verifyToken, async (req, res) => {
 });
 
 //post orders
-app.post("/orders", verifyToken, async (req, res) => {
+// app.post("/orders", async (req, res) => {
+//   const order = req.body;
+
+//   order.buyerInfo.userId = req.decoded.userId; //  real user
+//   order.orderStatus = "pending";
+//   order.paymentStatus = "unpaid";
+//   order.createdAt = new Date();
+
+//   const result = await ordersCollection.insertOne(order);
+
+//   res.send(result);
+// });
+
+app.post("/orders", async (req, res) => {
   const order = req.body;
 
-  order.buyerInfo.userId = req.decoded.userId; //  real user
+  order.buyerInfo.userId = req.body.buyerId; // from frontend
   order.orderStatus = "pending";
   order.paymentStatus = "unpaid";
   order.createdAt = new Date();
@@ -226,6 +198,210 @@ app.post("/orders", verifyToken, async (req, res) => {
   const result = await ordersCollection.insertOne(order);
 
   res.send(result);
+});
+
+//post wishlist
+
+app.post("/wishlist", async (req, res) => {
+  const item = req.body;
+
+  item.userId = req.body.userId;
+  item.createdAt = new Date();
+
+  const result = await wishlistCollection.insertOne(item);
+
+  res.send(result);
+});
+
+//get wishlist
+app.get("/wishlist", async (req, res) => {
+  try {
+    const userId = req.query.userId;
+
+    const result = await wishlistCollection.find({ userId }).toArray();
+
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
+
+//delete wishlist
+app.delete("/wishlist/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await wishlistCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  res.send(result);
+});
+
+//post payments
+app.post("/payments", async (req, res) => {
+  const payment = req.body;
+
+  payment.buyerId = req.decoded.userId;
+  payment.paymentStatus = "success";
+  payment.paymentDate = new Date();
+
+  const result = await paymentsCollection.insertOne(payment);
+
+  res.send(result);
+});
+
+//get payments:
+
+app.get("/payments", async (req, res) => {
+  const userId = req.decoded.userId;
+
+  const result = await paymentsCollection.find({ buyerId: userId }).toArray();
+
+  res.send(result);
+});
+
+//seller products
+
+app.get("/seller/products", async (req, res) => {
+  const sellerId = req.decoded.userId;
+
+  const { search = "", category, condition } = req.query;
+
+  let query = {
+    "sellerInfo.userId": sellerId,
+    title: { $regex: search, $options: "i" },
+  };
+
+  if (category) query.category = category;
+  if (condition) query.condition = condition;
+
+  const result = await productsCollection.find(query).toArray();
+  res.send(result);
+});
+
+//seller stats
+
+app.get("/seller/stats", async (req, res) => {
+  const sellerId = req.decoded.userId;
+
+  const totalProducts = await productsCollection.countDocuments({
+    "sellerInfo.userId": sellerId,
+  });
+
+  const totalOrders = await ordersCollection.countDocuments({
+    "sellerInfo.userId": sellerId,
+  });
+
+  const deliveredOrders = await ordersCollection.countDocuments({
+    "sellerInfo.userId": sellerId,
+    orderStatus: "delivered",
+  });
+
+  res.send({
+    totalProducts,
+    totalOrders,
+    deliveredOrders,
+  });
+});
+
+//seller order management
+
+app.get("/seller/orders", async (req, res) => {
+  const sellerId = req.decoded.userId;
+
+  const orders = await ordersCollection
+    .find({ "sellerInfo.userId": sellerId })
+    .toArray();
+
+  res.send(orders);
+});
+
+//update order status
+app.patch("/orders/:id/status", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body;
+
+  const result = await ordersCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { orderStatus: status } }
+  );
+
+  res.send(result);
+});
+
+//get all users
+
+app.get("/admin/users", async (req, res) => {
+  const result = await usersCollection.find().toArray();
+  res.send(result);
+});
+
+//block user
+
+app.patch("/admin/users/:id/block", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await usersCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status: "blocked" } }
+  );
+
+  res.send(result);
+});
+
+//admin product
+app.get("/admin/products", async (req, res) => {
+  const result = await productsCollection.find().toArray();
+  res.send(result);
+});
+
+//delete product
+
+app.delete("/admin/products/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await productsCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  res.send(result);
+});
+
+//analytics api
+app.get("/analytics/admin", async (req, res) => {
+  res.send({
+    userGrowth: [10, 20, 30, 50],
+    orders: [5, 15, 25, 40],
+    categories: {
+      electronics: 40,
+      fashion: 30,
+      home: 30,
+    },
+  });
+});
+//get buyer stats
+app.get("/buyer/stats", async (req, res) => {
+  const buyerId = req.query.userId;
+
+  const totalOrders = await ordersCollection.countDocuments({
+    "buyerInfo.userId": buyerId,
+  });
+
+  const wishlistCount = await wishlistCollection.countDocuments({
+    userId: buyerId,
+  });
+
+  const recentPurchases = await ordersCollection
+    .find({ "buyerInfo.userId": buyerId })
+    .sort({ _id: -1 })
+    .limit(5)
+    .toArray();
+
+  res.send({
+    totalOrders,
+    wishlistCount,
+    recentPurchases,
+  });
 });
 
     // Send a ping to confirm a successful connection
