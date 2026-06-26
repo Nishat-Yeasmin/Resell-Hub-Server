@@ -1,18 +1,29 @@
 const dns = require("node:dns")
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
+require('dotenv').config()
 
 const express = require('express');
 const cors = require("cors");
 const app = express()
 const port = 5000
-require('dotenv').config()
 
+const Stripe = require("stripe");
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 app.use(cors());
 app.use(express.json());
 
+// app.use((req, res, next) => {
+//   req.decoded = {
+//     userId: "demo-user-1",
+//   };
+//   next();
+// });
+
 app.use((req, res, next) => {
-  req.decoded = {
-    userId: "demo-user-1",
+  req.user = {
+    id: "demo-user-1",
+    name: "Demo User",
+    email: "demo@gmail.com",
   };
   next();
 });
@@ -379,27 +390,28 @@ app.delete("/wishlist/:id", async (req, res) => {
 });
 
 //post payments
-app.post("/payments", async (req, res) => {
-  const payment = req.body;
+// app.post("/payments", async (req, res) => {
+//   const payment = req.body;
 
-  payment.buyerId = req.decoded.userId;
-  payment.paymentStatus = "success";
-  payment.paymentDate = new Date();
+//   payment.buyerId = req.decoded.userId;
+//   payment.paymentStatus = "success";
+//   payment.paymentDate = new Date();
 
-  const result = await paymentsCollection.insertOne(payment);
+//   const result = await paymentsCollection.insertOne(payment);
 
-  res.send(result);
-});
+//   res.send(result);
+// });
 
-//get payments:
+// //get payments:
 
-app.get("/payments", async (req, res) => {
-  const userId = req.decoded.userId;
+// app.get("/payments", async (req, res) => {
+//   const userId = req.decoded.userId;
 
-  const result = await paymentsCollection.find({ buyerId: userId }).toArray();
+//   const result = await paymentsCollection.find({ buyerId: userId }).toArray();
 
-  res.send(result);
-});
+//   res.send(result);
+// });
+
 
 //seller products
 
@@ -634,6 +646,150 @@ app.get("/buyer/stats", async (req, res) => {
     recentPurchases,
   });
 });
+
+//create payment
+app.post("/create-payment-intent", async (req, res) => {
+  try {
+    const { amount, orderId } = req.body;
+
+     if (!amount || amount <= 0) {
+      return res.status(400).send({ message: "Invalid amount" });
+    }
+
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // cents
+      currency: "usd",
+      metadata: {
+        orderId,
+      },
+    });
+    
+console.log("CLIENT SECRET SENT:", paymentIntent.client_secret);
+
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+    });
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+//payments confirm
+// app.post("/payments/confirm", async (req, res) => {
+//   console.log("CONFIRM HIT:", req.body);
+//  const result = await paymentsCollection.insertOne(payment);
+
+//   const { orderId, transactionId, amount } = req.body;
+
+//     if (!orderId || !transactionId) {
+//       return res.status(400).send({ message: "Missing data" });
+//     }
+//   // 1. Save payment
+//   const payment = {
+//     orderId,
+//     transactionId,
+//     amount,
+//     paymentStatus: "success",
+//     paymentDate: new Date(),
+//   };
+
+//   await paymentsCollection.insertOne(payment);
+// console.log("Inserted payment:", result.insertedId);
+
+//   // 2. Update order
+//   await ordersCollection.updateOne(
+//     { _id: new ObjectId(orderId) },
+//     {
+//       $set: {
+//         paymentStatus: "paid",
+//         orderStatus: "processing",
+//       },
+//     }
+//   );
+
+//   res.send({ success: true });
+// });
+app.post("/payments/confirm", async (req, res) => {
+  try {
+    const { orderId, transactionId, amount } = req.body;
+
+    console.log("CONFIRM HIT:", req.body);
+
+    // 1. validation
+    if (!orderId || !transactionId || !amount) {
+      return res.status(400).send({
+        message: "Missing payment data",
+      });
+    }
+
+    // 2. create payment object FIRST
+    const payment = {
+      orderId,
+      transactionId,
+      amount,
+      paymentStatus: "success",
+      paymentDate: new Date(),
+    };
+
+    // 3. insert payment
+    const result = await paymentsCollection.insertOne(payment);
+
+    console.log("Inserted payment:", result.insertedId);
+
+    // 4. update order
+    await ordersCollection.updateOne(
+      { _id: new ObjectId(orderId) },
+      {
+        $set: {
+          paymentStatus: "paid",
+          orderStatus: "processing",
+        },
+      }
+    );
+
+    res.send({
+      success: true,
+      insertedId: result.insertedId,
+    });
+  } catch (error) {
+    console.error("Payment confirm error:", error);
+    res.status(500).send({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+//popular category
+app.get("/categories", async (req, res) => {
+  try {
+    const categories = await productsCollection
+      .aggregate([
+        {
+          $group: {
+            _id: "$category",
+            count: { $sum: 1 },
+            image: { $first: "$image" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            name: "$_id",
+            count: 1,
+            image: 1,
+          },
+        },
+      ])
+      .toArray();
+
+    res.send(categories);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
