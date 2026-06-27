@@ -564,6 +564,40 @@ app.delete("/admin/products/:id", async (req, res) => {
 });
 
 
+//get admin orders
+app.get("/admin/orders", async (req, res) => {
+  try {
+    const orders = await ordersCollection
+      .find()
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(orders);
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }s
+});
+
+
+app.patch("/admin/orders/:id/status", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body;
+
+  const result = await ordersCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: {
+        orderStatus: status,
+      },
+    }
+  );
+
+  res.send(result);
+});
+
+
 //analytics api
 app.get("/analytics/admin", async (req, res) => {
   res.send({
