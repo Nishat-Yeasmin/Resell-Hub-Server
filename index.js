@@ -86,6 +86,9 @@ app.post("/products", async (req, res) => {
   try {
     const product = req.body;
 
+        product.status = "pending";
+    product.reported = false;
+
     const result = await productsCollection.insertOne(product);
 
     res.send({
@@ -531,18 +534,6 @@ app.get("/admin/products", async (req, res) => {
   res.send(result);
 });
 
-//delete product
-
-app.delete("/admin/products/:id", async (req, res) => {
-  const id = req.params.id;
-
-  const result = await productsCollection.deleteOne({
-    _id: new ObjectId(id),
-  });
-
-  res.send(result);
-});
-
 //products status
 app.patch("/admin/products/:id/status", async (req, res) => {
   const id = req.params.id;
@@ -559,6 +550,19 @@ app.patch("/admin/products/:id/status", async (req, res) => {
 
   res.send(result);
 });
+
+//delete product
+
+app.delete("/admin/products/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await productsCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  res.send(result);
+});
+
 
 //analytics api
 app.get("/analytics/admin", async (req, res) => {
