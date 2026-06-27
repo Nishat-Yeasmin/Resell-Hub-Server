@@ -52,25 +52,32 @@ const wishlistCollection = database.collection("wishlist");
 
 
 app.get("/statistics", async (req, res) => {
-  const totalUsers = await usersCollection.countDocuments();
+  try {
+    const totalProducts = await productsCollection.countDocuments();
 
-  const totalProducts =
-    await productsCollection.countDocuments();
+    const totalSellers = await usersCollection.countDocuments({
+      role: "seller",
+    });
 
-  const totalOrders =
-    await ordersCollection.countDocuments();
+    const totalBuyers = await usersCollection.countDocuments({
+      role: "buyer",
+    });
 
-  const completedOrders =
-    await ordersCollection.countDocuments({
+    const completedOrders = await ordersCollection.countDocuments({
       orderStatus: "delivered",
     });
 
-  res.send({
-    totalUsers,
-    totalProducts,
-    totalOrders,
-    completedOrders,
-  });
+    res.send({
+      totalProducts,
+      totalSellers,
+      totalBuyers,
+      completedOrders,
+    });
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
 });
 
 // Add Product API
@@ -447,6 +454,26 @@ app.get("/seller/orders", async (req, res) => {
   res.send(orders);
 });
 
+//get admin dashboard
+app.get("/admin/dashboard", async (req, res) => {
+  try {
+    const totalUsers = await usersCollection.countDocuments();
+
+    const totalProducts = await productsCollection.countDocuments();
+
+    const totalOrders = await ordersCollection.countDocuments();
+
+    res.send({
+      totalUsers,
+      totalProducts,
+      totalOrders,
+    });
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
+});
 
 //get all users
 
@@ -457,12 +484,30 @@ app.get("/admin/users", async (req, res) => {
 
 //block user
 
-app.patch("/admin/users/:id/block", async (req, res) => {
+// app.patch("/admin/users/:id/block", async (req, res) => {
+//   const id = req.params.id;
+
+//   const result = await usersCollection.updateOne(
+//     { _id: new ObjectId(id) },
+//     { $set: { status: "blocked" } }
+//   );
+
+//   res.send(result);
+// });
+
+app.patch("/admin/users/:id/status", async (req, res) => {
   const id = req.params.id;
+  const { status } = req.body;
 
   const result = await usersCollection.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: { status: "blocked" } }
+    {
+      _id: new ObjectId(id),
+    },
+    {
+      $set: {
+        status,
+      },
+    }
   );
 
   res.send(result);
