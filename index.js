@@ -117,6 +117,36 @@ app.get("/products", async (req, res) => {
   res.send(result);
 });
 
+// Get Popular Categories
+app.get("/categories", async (req, res) => {
+  try {
+    const products = await productsCollection.find().toArray();
+
+    const categoryMap = {};
+
+    products.forEach((product) => {
+      const category = product.category;
+
+      if (!categoryMap[category]) {
+        categoryMap[category] = {
+          name: category,
+          image: product.image,
+          count: 1,
+        };
+      } else {
+        categoryMap[category].count++;
+      }
+    });
+
+    res.send(Object.values(categoryMap));
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
+});
+
+
 // single product
 
 app.get("/products/:id", async (req, res) => {
