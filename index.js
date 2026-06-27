@@ -513,6 +513,18 @@ app.patch("/admin/users/:id/status", async (req, res) => {
   res.send(result);
 });
 
+//delete users
+app.delete("/admin/users/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await usersCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  res.send(result);
+});
+
+
 //admin product
 app.get("/admin/products", async (req, res) => {
   const result = await productsCollection.find().toArray();
@@ -527,6 +539,23 @@ app.delete("/admin/products/:id", async (req, res) => {
   const result = await productsCollection.deleteOne({
     _id: new ObjectId(id),
   });
+
+  res.send(result);
+});
+
+//products status
+app.patch("/admin/products/:id/status", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body;
+
+  const result = await productsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: {
+        status,
+      },
+    }
+  );
 
   res.send(result);
 });
