@@ -12,13 +12,21 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 app.use(cors());
 app.use(express.json());
 
-// app.use((req, res, next) => {
-//   req.decoded = {
-//     userId: "demo-user-1",
-//   };
-//   next();
-// });
+// app.use(async (req, res, next) => {
+//   try {
+//     const session = await auth.api.getSession({
+//       headers: req.headers,
+//     });
 
+//     if (session?.user) {
+//       req.user = session.user;
+//     }
+
+//     next();
+//   } catch (error) {
+//     next(error);
+//   }
+// });
 app.use((req, res, next) => {
   req.user = {
     id: "demo-user-1",
@@ -47,10 +55,15 @@ const client = new MongoClient(uri, {
   }
 });
 
-async function run() {
-  try {
-    // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+client.connect(()=>{
+  console.log('connecting to mongodb')
+}).catch(console.dir)
+
+// async function run() {
+//   try {
+//     // Connect the client to the server	(optional starting in v4.7)
+//     await client.connect();
+
     const database = client.db("resell_hub_db");
 
      const usersCollection = database.collection("user");
@@ -923,23 +936,23 @@ app.get("/categories", async (req, res) => {
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  }
-   finally {
-    // Ensures that the client will close when you finish/error
+    // await client.db("admin").command({ ping: 1 });
+//     console.log("Pinged your deployment. You successfully connected to MongoDB!");
+//   }
+//    finally {
+//     // Ensures that the client will close when you finish/error
     
-  }
+//   }
 
   
  
-}
+// }
 
 
-run().catch(console.dir);
-
-
+// run().catch(console.dir);
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
 })
+
+module.exports = app;
