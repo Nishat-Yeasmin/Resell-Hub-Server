@@ -118,24 +118,62 @@ app.post("/products", async (req, res) => {
 //get products
 
 app.get("/products", async (req, res) => {
-  const search = req.query.search || "";
-  const category = req.query.category;
-  const condition = req.query.condition;
+  try {
+    const search = req.query.search || "";
+    const category = req.query.category;
+    const condition = req.query.condition;
+    const sort = req.query.sort;
 
-  let query = {
-    title: { $regex: search, $options: "i" },
-  };
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 6;
+    const skip = (page - 1) * limit;
 
-  if (category) {
-    query.category = category;
+    let sortOption = {};
+
+    if (sort === "low") {
+      sortOption = { price: 1 };
+    } else if (sort === "high") {
+      sortOption = { price: -1 };
+    }
+
+    let query = {
+      title: {
+        $regex: search,
+        $options: "i",
+      },
+    };
+
+    if (category) {
+      query.category = category;
+    }
+
+    if (condition) {
+      query.condition = condition;
+    }
+
+    // Total products after filtering
+    const totalProducts =
+      await productsCollection.countDocuments(query);
+
+    const products = await productsCollection
+      .find(query)
+      .sort(sortOption)
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    res.send({
+      products,
+      totalProducts,
+      currentPage: page,
+      totalPages: Math.ceil(totalProducts / limit),
+    });
+  } catch (err) {
+    res.status(500).send({
+      message: err.message,
+    });
   }
-
-  if (condition) {
-    query.condition = condition;
-  }
-
-  const result = await productsCollection.find(query).toArray();
-  res.send(result);
 });
 
 // Get Popular Categories
@@ -214,32 +252,22 @@ app.patch("/products/:id", async (req, res) => {
 
 // GET: Buyer Orders
 app.get("/orders", async (req, res) => {
-  // try {
-  //   const buyerId = req.query.userId;
+  try {
+    const buyerId = req.query.userId;
 
-  //   const orders = await ordersCollection
-  //     .find({ "buyerInfo.userId": buyerId })
-  //     .sort({ _id: -1 })
-  //     .toArray();
-    const user = req.user;
-
-  if (!user) {
-    return res.send([]);
-  }
-
-  const orders = await ordersCollection
-    .find({
-      "buyerInfo.userId": user.id,
-    })
-    .toArray();
+    const orders = await ordersCollection
+      .find({
+        "buyerInfo.userId": buyerId,
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
 
     res.send(orders);
-  // }catch (error) {
-  //   res.status(500).send({
-  //     message: "Failed to fetch orders",
-  //     error: error.message,
-  //   });
-  // }
+  } catch (err) {
+    res.status(500).send({
+      message: err.message,
+    });
+  }
 });
 
 // Single Order Details
@@ -282,11 +310,7 @@ app.post("/orders", async (req, res) => {
     quantity: order.quantity,
     totalAmount: order.totalAmount,
 
-     buyerInfo: {
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-    },
+     buyerInfo: order.buyerInfo,
     sellerInfo: order.sellerInfo,
 
     shippingAddress: order.shippingAddress,
@@ -355,14 +379,31 @@ app.patch("/orders/:id/status", async (req, res) => {
 //post wishlist
 
 app.post("/wishlist", async (req, res) => {
-  const item = req.body;
+  try {
+    const wishlist = req.body;
 
-  item.userId = req.body.userId;
-  item.createdAt = new Date();
+    const exists = await wishlistCollection.findOne({
+      userId: wishlist.userId,
+      productId: wishlist.productId,
+    });
 
-  const result = await wishlistCollection.insertOne(item);
+    if (exists) {
+      return res.status(400).send({
+        message: "Product already in wishlist",
+      });
+    }
 
-  res.send(result);
+    const result = await wishlistCollection.insertOne({
+      ...wishlist,
+      createdAt: new Date(),
+    });
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
 });
 
 //get wishlist
@@ -370,53 +411,40 @@ app.get("/wishlist", async (req, res) => {
   try {
     const userId = req.query.userId;
 
-    const result = await wishlistCollection.find({ userId }).toArray();
+    const result = await wishlistCollection
+      .find({ userId })
+      .toArray();
 
     res.send(result);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
   }
 });
 
+
 //delete wishlist
 app.delete("/wishlist/:id", async (req, res) => {
-  const id = req.params.id;
+  try {
+    const id = req.params.id;
 
-  const result = await wishlistCollection.deleteOne({
-    _id: new ObjectId(id),
-  });
+    const result = await wishlistCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
 
-  res.send(result);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
 });
-
-//post payments
-// app.post("/payments", async (req, res) => {
-//   const payment = req.body;
-
-//   payment.buyerId = req.decoded.userId;
-//   payment.paymentStatus = "success";
-//   payment.paymentDate = new Date();
-
-//   const result = await paymentsCollection.insertOne(payment);
-
-//   res.send(result);
-// });
-
-// //get payments:
-
-// app.get("/payments", async (req, res) => {
-//   const userId = req.decoded.userId;
-
-//   const result = await paymentsCollection.find({ buyerId: userId }).toArray();
-
-//   res.send(result);
-// });
-
 
 //seller products
 
 app.get("/seller/products", async (req, res) => {
-  const sellerId = req.decoded.userId;
+  const sellerId = req.query.userId;
 
   const { search = "", category, condition } = req.query;
 
@@ -435,38 +463,84 @@ app.get("/seller/products", async (req, res) => {
 //seller stats
 
 app.get("/seller/stats", async (req, res) => {
-  const sellerId = req.decoded.userId;
+  try {
+    const sellerId = req.query.userId;
+    
+    console.log("Seller Id =", sellerId);
 
-  const totalProducts = await productsCollection.countDocuments({
-    "sellerInfo.userId": sellerId,
-  });
+    const totalProducts = await productsCollection.countDocuments({
+      "sellerInfo.userId": sellerId,
+    });
 
-  const totalOrders = await ordersCollection.countDocuments({
-    "sellerInfo.userId": sellerId,
-  });
+    const totalSales = await ordersCollection.countDocuments({
+      "sellerInfo.userId": sellerId,
+      orderStatus: "delivered",
+    });
 
-  const deliveredOrders = await ordersCollection.countDocuments({
-    "sellerInfo.userId": sellerId,
-    orderStatus: "delivered",
-  });
+    const pendingOrders = await ordersCollection.countDocuments({
+      "sellerInfo.userId": sellerId,
+      orderStatus: {
+        $in: ["pending", "processing", "shipped"],
+      },
+    });
 
-  res.send({
-    totalProducts,
-    totalOrders,
-    deliveredOrders,
-  });
+    const revenueResult = await ordersCollection
+      .aggregate([
+        {
+          $match: {
+            "sellerInfo.userId": sellerId,
+            orderStatus: "delivered",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: {
+              $sum: "$totalAmount",
+            },
+          },
+        },
+      ])
+      .toArray();
+
+    const totalRevenue =
+      revenueResult.length > 0
+        ? revenueResult[0].totalRevenue
+        : 0;
+
+    res.send({
+      totalProducts,
+      totalSales,
+      totalRevenue,
+      pendingOrders,
+    });
+
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
 });
 
 //seller order management
 
 app.get("/seller/orders", async (req, res) => {
-  const sellerId = req.decoded.userId;
+  try {
+    const sellerId = req.user.id;
 
-  const orders = await ordersCollection
-    .find({ "sellerInfo.userId": sellerId })
-    .toArray();
+    const orders = await ordersCollection
+      .find({
+        "sellerInfo.userId": sellerId,
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
 
-  res.send(orders);
+    res.send(orders);
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
 });
 
 //get admin dashboard
@@ -498,17 +572,6 @@ app.get("/admin/users", async (req, res) => {
 });
 
 //block user
-
-// app.patch("/admin/users/:id/block", async (req, res) => {
-//   const id = req.params.id;
-
-//   const result = await usersCollection.updateOne(
-//     { _id: new ObjectId(id) },
-//     { $set: { status: "blocked" } }
-//   );
-
-//   res.send(result);
-// });
 
 app.patch("/admin/users/:id/status", async (req, res) => {
   const id = req.params.id;
@@ -589,7 +652,7 @@ app.get("/admin/orders", async (req, res) => {
     res.status(500).send({
       message: error.message,
     });
-  }s
+  }
 });
 
 
@@ -647,6 +710,27 @@ app.get("/buyer/stats", async (req, res) => {
   });
 });
 
+//buyer profile update
+app.patch("/buyer/profile/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const { name, image } = req.body;
+
+  const result = await usersCollection.updateOne(
+    {
+      _id: new ObjectId(id),
+    },
+    {
+      $set: {
+        name,
+        image,
+      },
+    }
+  );
+
+  res.send(result);
+});
+
 //create payment
 app.post("/create-payment-intent", async (req, res) => {
   try {
@@ -675,69 +759,65 @@ console.log("CLIENT SECRET SENT:", paymentIntent.client_secret);
   }
 });
 
-//payments confirm
-// app.post("/payments/confirm", async (req, res) => {
-//   console.log("CONFIRM HIT:", req.body);
-//  const result = await paymentsCollection.insertOne(payment);
+//get payment
+app.get("/payments", async (req, res) => {
+  try {
+    const userId = req.query.userId;
 
-//   const { orderId, transactionId, amount } = req.body;
+    const payments = await paymentsCollection
+      .find({
+        buyerId: userId,
+      })
+      .sort({
+        paymentDate: -1,
+      })
+      .toArray();
 
-//     if (!orderId || !transactionId) {
-//       return res.status(400).send({ message: "Missing data" });
-//     }
-//   // 1. Save payment
-//   const payment = {
-//     orderId,
-//     transactionId,
-//     amount,
-//     paymentStatus: "success",
-//     paymentDate: new Date(),
-//   };
+    res.send(payments);
 
-//   await paymentsCollection.insertOne(payment);
-// console.log("Inserted payment:", result.insertedId);
+  } catch (error) {
+    res.status(500).send({
+      message: error.message,
+    });
+  }
+});
 
-//   // 2. Update order
-//   await ordersCollection.updateOne(
-//     { _id: new ObjectId(orderId) },
-//     {
-//       $set: {
-//         paymentStatus: "paid",
-//         orderStatus: "processing",
-//       },
-//     }
-//   );
-
-//   res.send({ success: true });
-// });
+//post payment
 app.post("/payments/confirm", async (req, res) => {
   try {
     const { orderId, transactionId, amount } = req.body;
 
-    console.log("CONFIRM HIT:", req.body);
-
-    // 1. validation
     if (!orderId || !transactionId || !amount) {
       return res.status(400).send({
         message: "Missing payment data",
       });
     }
 
-    // 2. create payment object FIRST
+    // Find the order
+    const order = await ordersCollection.findOne({
+      _id: new ObjectId(orderId),
+    });
+
+    if (!order) {
+      return res.status(404).send({
+        message: "Order not found",
+      });
+    }
+
     const payment = {
       orderId,
       transactionId,
       amount,
-      paymentStatus: "success",
+      buyerId: order.buyerInfo.userId,
+      buyerName: order.buyerInfo.name,
+      buyerEmail: order.buyerInfo.email,
+      paymentStatus: "paid",
       paymentDate: new Date(),
     };
 
-    // 3. insert payment
-    const result = await paymentsCollection.insertOne(payment);
+    const result =
+      await paymentsCollection.insertOne(payment);
 
-    console.log("Inserted payment:", result.insertedId);
-
-    // 4. update order
     await ordersCollection.updateOne(
       { _id: new ObjectId(orderId) },
       {
@@ -752,13 +832,64 @@ app.post("/payments/confirm", async (req, res) => {
       success: true,
       insertedId: result.insertedId,
     });
+
   } catch (error) {
-    console.error("Payment confirm error:", error);
     res.status(500).send({
-      success: false,
       message: error.message,
     });
   }
+});
+
+//get reviews
+app.get("/reviews", async (req, res) => {
+
+  try{
+
+    const reviews =
+      await reviewsCollection
+      .find()
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .toArray();
+
+    res.send(reviews);
+
+  }
+
+  catch(error){
+
+    res.status(500).send({
+      message:error.message
+    })
+
+  }
+
+});
+
+//post reviews
+app.post("/reviews", async (req,res)=>{
+
+    try{
+
+        const review=req.body;
+        
+        review.createdAt = new Date();
+
+        const result=
+        await reviewsCollection.insertOne(review);
+
+        res.send(result);
+
+    }
+
+    catch(error){
+
+        res.status(500).send({
+            message: err.message
+        })
+
+    }
+
 });
 
 //popular category
